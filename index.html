@@ -433,6 +433,7 @@
         let nextNoteTime = 0;
         let timerID = null;
 
+        // 音声を再生する関数
         function playClick(time) {
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             const osc = audioCtx.createOscillator();
@@ -448,6 +449,7 @@
             osc.stop(time + 0.06);
         }
 
+        // メトロノームのスケジュールを管理する関数
         function scheduler() {
             if (!state.isActive) return;
             const currentTime = audioCtx.currentTime;
@@ -487,6 +489,7 @@
             elements.guideEmoji.style.setProperty('--jump-scale', scaleAmount);
         }
 
+        // ジャンプ動作を実行する関数
         function doJump() {
             if (!state.isActive) return;
             state.count++;
