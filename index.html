@@ -12,10 +12,19 @@
     <style>
         @keyframes jump-up {
             0%, 100% { transform: translateY(0) scale(1); }
-            50% { transform: translateY(-120px) scale(1.1); }
+            50% { transform: translateY(var(--jump-height, -120px)) scale(var(--jump-scale, 1.1)); }
         }
         .jumping {
-            animation: jump-up 0.15s ease-out;
+            /* アニメーション時間（duration）もBPMに応じて動的に変化します */
+            animation: jump-up var(--jump-duration, 0.15s) ease-out;
+        }
+        /* スクロールバー非表示（ギャラリー内） */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
         }
     </style>
 </head>
@@ -31,6 +40,93 @@
             メッセージ
         </div>
 
+        <!-- 1. APIキー入力画面オーバーレイ -->
+        <div id="apiKeyModal" class="fixed inset-0 flex items-center justify-center z-[200] p-4 bg-slate-950">
+            <div class="bg-slate-900 text-white p-8 rounded-[3rem] shadow-2xl text-center border-4 border-indigo-500 max-w-md w-full animate-in zoom-in duration-200 pointer-events-auto">
+                <h2 class="text-3xl font-black mb-4 text-indigo-400">Gemini API設定</h2>
+                <p class="text-sm text-slate-300 mb-6 leading-relaxed">
+                    AIアドバイス機能を有効にするために、Google AI Studioで取得したGeminiのAPIキーを入力してください。<br>
+                    <span class="text-xs text-slate-400">※キーは暗号化されず、ブラウザ内での一時的な通信にのみ使用されます。</span>
+                </p>
+                
+                <div class="mb-6">
+                    <input type="password" id="apiKeyInput" placeholder="AIzaSy..." class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-center text-white focus:outline-none focus:border-indigo-500 text-lg">
+                </div>
+
+                <div class="space-y-3">
+                    <button id="btnSaveApiKey" class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold text-lg active:scale-95 transition-all shadow-lg shadow-indigo-900/40">次へすすむ</button>
+                    <button id="btnSkipApiKey" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-2xl font-bold text-sm active:scale-95 transition-all">スキップする（AI機能オフ）</button>
+                </div>
+                
+                <p class="text-xs text-slate-500 mt-6">
+                    キーをお持ちでない場合は、<a href="https://aistudio.google.com/" target="_blank" class="text-indigo-400 underline hover:text-indigo-300">Google AI Studio</a>から無料で取得できます。
+                </p>
+            </div>
+        </div>
+
+        <!-- 2. セーブコード（引き継ぎ）設定画面オーバーレイ -->
+        <div id="saveCodeModal" class="fixed inset-0 flex items-center justify-center z-[190] p-4 bg-slate-950 hidden">
+            <div class="bg-slate-900 text-white p-8 rounded-[3rem] shadow-2xl text-center border-4 border-emerald-500 max-w-md w-full animate-in zoom-in duration-200 pointer-events-auto">
+                <h2 class="text-3xl font-black mb-4 text-emerald-400">キャラクター同期設定</h2>
+                <p class="text-sm text-slate-300 mb-6 leading-relaxed">
+                    他のデバイスと同じキャラクター画像・背景画像を使いたい場合は、すでに持っている「セーブコード」を入力してください。<br>
+                    新しく始める場合は、何も入力せずにそのまま開始できます。
+                </p>
+                
+                <div class="mb-6">
+                    <input type="text" id="saveCodeInput" placeholder="セーブコード（持っている場合のみ入力）" class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-center text-white focus:outline-none focus:border-emerald-500 text-base">
+                </div>
+
+                <div class="space-y-3">
+                    <button id="btnApplySaveCode" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold text-lg active:scale-95 transition-all shadow-lg">読み込んでトレーニング開始</button>
+                    <button id="btnNewSaveCode" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-2xl font-bold text-sm active:scale-95 transition-all">新しく登録をはじめる</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. セーブコード確認・コピー促し画面オーバーレイ -->
+        <div id="saveCodeConfirmModal" class="fixed inset-0 flex items-center justify-center z-[180] p-4 bg-black/80 backdrop-blur-md hidden">
+            <div class="bg-slate-900 text-white p-8 rounded-[3rem] shadow-2xl text-center border-4 border-amber-500 max-w-md w-full animate-in zoom-in duration-200 pointer-events-auto">
+                <div class="text-5xl mb-4">⚠️</div>
+                <h2 class="text-2xl font-black mb-2 text-amber-400">セーブコードをコピーしてください</h2>
+                <p class="text-sm text-slate-300 mb-6 leading-relaxed">
+                    登録したキャラクターや背景画像を**他のデバイスに引き継ぐために必要な大切なコード**です。紛失すると復元できません。必ず控えてください。
+                </p>
+                
+                <div class="bg-black/40 p-4 rounded-2xl border border-white/10 mb-6 flex items-center justify-between gap-3">
+                    <span id="confirmSaveCodeText" class="text-emerald-400 font-mono text-sm break-all font-bold select-all">コード取得中...</span>
+                    <button id="btnConfirmCopy" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-xl text-xs font-bold transition-transform active:scale-95 shrink-0 flex items-center gap-1">
+                        <span>📋</span>コピー
+                    </button>
+                </div>
+
+                <button id="btnConfirmOk" class="w-full py-4 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-2xl font-black text-lg active:scale-95 transition-all shadow-lg">コピーしました（進む）</button>
+            </div>
+        </div>
+
+        <!-- 4. 画像ライブラリ（ギャラリー）選択モーダル -->
+        <div id="libraryModal" class="fixed inset-0 flex items-center justify-center z-[170] p-4 bg-black/70 backdrop-blur-sm hidden">
+            <div class="bg-slate-900 text-white p-8 rounded-[3rem] shadow-2xl border-4 border-blue-500 max-w-lg w-full animate-in zoom-in duration-200 pointer-events-auto">
+                <h3 id="libraryTitle" class="text-2xl font-black mb-4 text-blue-400">キャラクターを選択</h3>
+                
+                <div class="mb-6">
+                    <p class="text-xs text-slate-400 mb-3 font-bold">登録済みの画像ライブラリ（クリックで選択）</p>
+                    <div id="libraryGrid" class="grid grid-cols-3 gap-4 max-h-[240px] overflow-y-auto pr-1 no-scrollbar">
+                        <!-- ここにサムネイルが動的に生成されます -->
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between gap-3 pt-4 border-t border-white/10">
+                    <button id="btnLibraryUpload" class="px-5 py-3 bg-blue-600 hover:bg-blue-500 rounded-2xl font-bold text-sm transition-all active:scale-95 flex items-center gap-2 shadow-lg shadow-blue-900/40">
+                        <span>📤</span>新しい画像を追加
+                    </button>
+                    <button id="btnCloseLibrary" class="px-5 py-3 bg-slate-800 hover:bg-slate-700 rounded-2xl font-bold text-sm transition-all active:scale-95 text-slate-400">
+                        キャンセル
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- 背景レイヤー: 右側カメラ映像 -->
         <div class="absolute top-0 right-0 w-1/2 h-full z-0 overflow-hidden bg-black">
             <video id="video" autoplay playsinline muted class="w-full h-full object-cover opacity-80" style="transform: scaleX(-1);"></video>
@@ -41,18 +137,29 @@
         <div class="relative z-20 w-full h-full flex flex-col">
             
             <!-- 上段: ステータスバー -->
-            <div class="absolute top-4 left-0 right-0 flex items-center z-50 h-20 px-6">
+            <div class="absolute top-4 left-0 right-0 flex items-center z-50 h-25 px-6">
                 <div class="w-1/2 flex items-center justify-between pr-2">
-                    <div class="flex items-center gap-2 pointer-events-auto">
-                        <div class="bg-black/80 p-3 rounded-3xl border border-white/10 backdrop-blur-md shadow-2xl flex flex-col items-center min-w-[80px]">
-                            <div class="text-blue-400 text-[10px] font-bold uppercase mb-1">BPM</div>
-                            <div id="bpmDisplay" class="text-3xl font-black">100</div>
+                    <div class="flex flex-col gap-2">
+                        <div class="flex items-center gap-2 pointer-events-auto">
+                            <!-- BPMディスプレイ -->
+                            <div class="bg-black/80 p-3 rounded-3xl border border-white/10 backdrop-blur-md shadow-2xl flex flex-col items-center min-w-[80px]">
+                                <div class="text-blue-400 text-[10px] font-bold uppercase mb-1">BPM</div>
+                                <div id="bpmDisplay" class="text-3xl font-black">100</div>
+                            </div>
+                            <!-- 背景登録ボタン -->
+                            <button id="btnTriggerBg" class="bg-black/60 hover:bg-black/80 w-12 h-12 rounded-full border border-white/10 text-xl shadow-lg transition-transform active:scale-95 flex items-center justify-center" title="背景登録">
+                                <span>🌳</span>
+                            </button>
+                            <!-- セーブコード確認ボタン -->
+                            <button id="btnShowCode" class="bg-black/60 hover:bg-black/80 w-12 h-12 rounded-full border border-white/10 text-xl shadow-lg transition-all active:scale-95 text-emerald-400 flex items-center justify-center" title="コード確認">
+                                <span>🔑</span>
+                            </button>
+                            <!-- キャラ登録ボタン -->
+                            <button id="btnTriggerChar" class="bg-blue-600 hover:bg-blue-500 text-white w-12 h-12 rounded-full text-xl shadow-xl transition-all active:scale-95 flex items-center justify-center border border-white/20" title="キャラ登録">
+                                <span>😊</span>
+                            </button>
                         </div>
-                        <button id="btnTriggerBg" class="bg-black/60 hover:bg-black/80 p-3 rounded-full border border-white/10 text-xl shadow-lg transition-transform active:scale-95" title="背景を変更">🌳</button>
                     </div>
-                    <button id="btnTriggerChar" class="pointer-events-auto bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-full text-xs font-bold shadow-xl transition-all active:scale-95 flex items-center gap-2 border border-white/20">
-                        <span>🖼️</span> <span id="charBtnText">キャラをえらぶ</span>
-                    </button>
                 </div>
                 <div class="w-1/2 flex items-center justify-end">
                     <div class="bg-black/80 p-3 rounded-3xl border border-white/10 backdrop-blur-md min-w-[120px] shadow-2xl flex flex-col items-center">
@@ -64,19 +171,22 @@
 
             <!-- 中央コンテンツ -->
             <div class="flex-1 flex items-stretch justify-between overflow-hidden">
+                <!-- 左半分: キャラクターと背景 -->
                 <div class="w-1/2 relative flex items-end justify-center px-6 overflow-hidden bg-slate-900">
-                    <img id="bgImg" src="IMG_3591.PNG" alt="Background" class="absolute inset-0 w-full h-full object-cover opacity-90 z-0">
+                    <img id="bgImg" src="" alt="Background" class="absolute inset-0 w-full h-full object-cover opacity-90 z-0">
                     <div class="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-transparent z-10 pointer-events-none"></div>
                     
                     <div id="charArea" class="relative z-30 flex items-end justify-center w-full h-full pb-4">
+                        <!-- キャラプレースホルダー (人顔風絵文字アイコン) -->
                         <div id="charPlaceholder" class="cursor-pointer w-full max-w-[180px] aspect-square border-4 border-white/20 border-dashed rounded-[3rem] flex flex-col items-center justify-center bg-black/40 hover:bg-black/60 transition-colors mb-40 backdrop-blur-md shadow-2xl pointer-events-auto">
-                            <div class="text-5xl mb-4 text-white/40">🖼️</div>
-                            <p class="text-[10px] font-bold text-center px-4 text-white/70 leading-relaxed uppercase">キャラクターをえらぶ</p>
+                            <div class="text-5xl mb-4 text-white/40">😊</div>
+                            <p class="text-[11px] font-bold text-center px-4 text-white/80 leading-relaxed uppercase">キャラクターを登録</p>
                         </div>
                         <img id="charImg" src="" alt="Character" class="hidden w-full max-w-[220px] h-auto object-contain transition-transform duration-100 ease-out drop-shadow-[0_20px_50px_rgba(0,0,0,0.9)] cursor-pointer pointer-events-auto">
                     </div>
                 </div>
 
+                <!-- 右半分: カメラ映像用ガイド -->
                 <div id="guideArea" class="w-1/2 flex items-stretch justify-center px-4 pt-2">
                     <div class="w-full h-full border-4 border-yellow-400/40 border-dashed rounded-[3rem] flex flex-col items-center justify-start pt-24 bg-yellow-400/5 backdrop-blur-[1px] transition-opacity duration-300">
                         <div class="flex flex-col items-center text-center">
@@ -126,10 +236,15 @@
     </div>
 
     <script>
+        // --- デフォルトプリセット画像定義 ---
+        // ユーザー提供のキャラクター・背景画像をプリセットの初期値として定義
+        const PRESET_CHAR = "IMG_3589.jpg";
+        const PRESET_BG = "IMG_3591.PNG";
+
         // --- 設定・初期化 ---
-        const apiKey = ""; 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'jump-trainer-app';
-        const firebaseConfig = JSON.parse(__firebase_config);
+        let apiKey = ""; 
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
         
         firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
@@ -138,14 +253,21 @@
         // 状態管理
         let state = {
             user: null,
+            saveCode: null, // 同期のためのセーブID（現在の引き継ぎコード）
             isActive: false,
             bpm: 100,
             count: 0,
             isJumping: false,
             imgSrc: null,
-            bgSrc: "IMG_3591.PNG",
+            bgSrc: null,
             isSaving: false,
-            isSynced: false
+            isSynced: false,
+            hasConfirmedCode: false, // コード確認モーダルを閉じたかどうか
+            library: {
+                char: [PRESET_CHAR], // 初期キャラを格納
+                bg: [PRESET_BG]      // 初期背景を格納
+            },
+            currentLibraryType: 'char' // 現在開いているライブラリの種類 ('char' または 'bg')
         };
 
         const elements = {
@@ -163,7 +285,6 @@
             btnSlower: document.getElementById('btnSlower'),
             btnTriggerChar: document.getElementById('btnTriggerChar'),
             btnTriggerBg: document.getElementById('btnTriggerBg'),
-            charBtnText: document.getElementById('charBtnText'),
             guideArea: document.getElementById('guideArea'),
             guideEmoji: document.getElementById('guideEmoji'),
             resultModal: document.getElementById('resultModal'),
@@ -172,7 +293,25 @@
             aiAdviceText: document.getElementById('aiAdviceText'),
             aiLoading: document.getElementById('aiLoading'),
             btnCloseResult: document.getElementById('btnCloseResult'),
-            toast: document.getElementById('toast')
+            toast: document.getElementById('toast'),
+            apiKeyModal: document.getElementById('apiKeyModal'),
+            apiKeyInput: document.getElementById('apiKeyInput'),
+            btnSaveApiKey: document.getElementById('btnSaveApiKey'),
+            btnSkipApiKey: document.getElementById('btnSkipApiKey'),
+            saveCodeModal: document.getElementById('saveCodeModal'),
+            saveCodeInput: document.getElementById('saveCodeInput'),
+            btnApplySaveCode: document.getElementById('btnApplySaveCode'),
+            btnNewSaveCode: document.getElementById('btnNewSaveCode'),
+            saveCodeConfirmModal: document.getElementById('saveCodeConfirmModal'),
+            confirmSaveCodeText: document.getElementById('confirmSaveCodeText'),
+            btnConfirmCopy: document.getElementById('btnConfirmCopy'),
+            btnConfirmOk: document.getElementById('btnConfirmOk'),
+            btnShowCode: document.getElementById('btnShowCode'),
+            libraryModal: document.getElementById('libraryModal'),
+            libraryTitle: document.getElementById('libraryTitle'),
+            libraryGrid: document.getElementById('libraryGrid'),
+            btnLibraryUpload: document.getElementById('btnLibraryUpload'),
+            btnCloseLibrary: document.getElementById('btnCloseLibrary')
         };
 
         // --- Firebase Auth (Rule 3) ---
@@ -188,32 +327,94 @@
             }
         }
 
-        // --- Firestore Sync (Rule 1 & 3) ---
-        function syncFirestore() {
-            if (!state.user || state.isSynced) return;
+        // --- Firestore Sync (Rule 1 & 3 遵守) ---
+        let syncRetryTimeout = null;
+        async function syncFirestore() {
+            if (!state.user || !state.saveCode) return;
+            
+            try {
+                await state.user.getIdToken(true);
+            } catch (tokenErr) {
+                console.warn("トークンの確認に失敗しました（再試行します）:", tokenErr);
+            }
+
+            if (state.isSynced) return;
             state.isSynced = true;
 
-            const docRef = db.collection('artifacts').doc(appId).collection('users').doc(state.user.uid).collection('settings').doc('character');
+            const docRef = db.collection('artifacts').doc(appId).collection('users').doc(state.saveCode).collection('settings').doc('character');
             
-            docRef.onSnapshot(doc => {
+            const unsubscribe = docRef.onSnapshot(doc => {
                 if (doc.exists) {
                     const data = doc.data();
+                    
+                    // ライブラリリストの同期
+                    if (data.charLibrary && Array.isArray(data.charLibrary)) {
+                        state.library.char = data.charLibrary;
+                    } else {
+                        state.library.char = [PRESET_CHAR];
+                    }
+                    if (data.bgLibrary && Array.isArray(data.bgLibrary)) {
+                        state.library.bg = data.bgLibrary;
+                    } else {
+                        state.library.bg = [PRESET_BG];
+                    }
+
+                    // 現在のアクティブ画像設定
                     if (data.imageBase64) {
                         state.imgSrc = data.imageBase64;
                         elements.charImg.src = data.imageBase64;
                         elements.charImg.classList.remove('hidden');
                         elements.charPlaceholder.classList.add('hidden');
-                        elements.charBtnText.textContent = "キャラ変更";
+                        elements.btnTriggerChar.title = "キャラ変更";
+                    } else if (state.library.char.length > 0) {
+                        // 選択がない場合はライブラリ先頭を初期化
+                        selectLibraryItem('char', 0, false);
                     }
+
                     if (data.bgBase64) {
                         state.bgSrc = data.bgBase64;
                         elements.bgImg.src = data.bgBase64;
+                    } else if (state.library.bg.length > 0) {
+                        // 選択がない場合はライブラリ先頭を初期化
+                        selectLibraryItem('bg', 0, false);
                     }
+                    
+                    if (!elements.libraryModal.classList.contains('hidden')) {
+                        renderLibraryGrid();
+                    }
+                } else {
+                    // ドキュメントが存在しない場合はプリセットで初期設定を保存
+                    saveInitialPresetToCloud();
                 }
             }, err => {
-                console.error("Firestore sync error:", err);
-                state.isSynced = false; // Retry potential
+                state.isSynced = false;
+                
+                if (err.code === 'permission-denied') {
+                    clearTimeout(syncRetryTimeout);
+                    syncRetryTimeout = setTimeout(() => {
+                        syncFirestore();
+                    }, 1000);
+                } else {
+                    console.error("Firestore sync error:", err);
+                }
             });
+        }
+
+        // クラウドに初期のプリセット構造を作成する
+        async function saveInitialPresetToCloud() {
+            if (!state.user || !state.saveCode) return;
+            try {
+                const docRef = db.collection('artifacts').doc(appId).collection('users').doc(state.saveCode).collection('settings').doc('character');
+                await docRef.set({
+                    imageBase64: PRESET_CHAR,
+                    bgBase64: PRESET_BG,
+                    charLibrary: [PRESET_CHAR],
+                    bgLibrary: [PRESET_BG],
+                    updatedAt: Date.now()
+                }, { merge: true });
+            } catch (err) {
+                console.error("Preset initialization error:", err);
+            }
         }
 
         // --- カメラ & オーディオ ---
@@ -236,38 +437,78 @@
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             const osc = audioCtx.createOscillator();
             const envelope = audioCtx.createGain();
-            osc.frequency.value = 1000;
-            envelope.gain.value = 0.4;
+            
+            osc.frequency.setValueAtTime(1000, time);
+            envelope.gain.setValueAtTime(0.4, time);
             envelope.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+            
             osc.connect(envelope);
             envelope.connect(audioCtx.destination);
             osc.start(time);
-            osc.stop(time + 0.05);
+            osc.stop(time + 0.06);
         }
 
         function scheduler() {
             if (!state.isActive) return;
-            while (nextNoteTime < audioCtx.currentTime + 0.1) {
+            const currentTime = audioCtx.currentTime;
+            
+            if (nextNoteTime < currentTime) {
+                nextNoteTime = currentTime;
+            }
+
+            while (nextNoteTime < currentTime + 0.1) {
                 playClick(nextNoteTime);
-                const delay = (nextNoteTime - audioCtx.currentTime) * 1000;
+                
+                const delay = (nextNoteTime - currentTime) * 1000;
                 setTimeout(() => {
                     doJump();
                 }, Math.max(0, delay));
+                
                 nextNoteTime += 60.0 / state.bpm;
             }
             timerID = setTimeout(scheduler, 25);
+        }
+
+        // --- BPMに応じたジャンプパラメータ（高さ・滞空時間）の動的計算機能 ---
+        function updateJumpStyles() {
+            const bpm = state.bpm;
+            const t = (bpm - 40) / (240 - 40);
+            
+            const durationSec = 0.45 * (1 - t) + 0.08 * t;
+            const heightPx = -220 * (1 - t) + -40 * t;
+            const scaleAmount = 1.15 * (1 - t) + 1.05 * t;
+
+            elements.charImg.style.setProperty('--jump-height', `${heightPx}px`);
+            elements.charImg.style.setProperty('--jump-duration', `${durationSec}s`);
+            elements.charImg.style.setProperty('--jump-scale', scaleAmount);
+
+            elements.guideEmoji.style.setProperty('--jump-height', `${heightPx}px`);
+            elements.guideEmoji.style.setProperty('--jump-duration', `${durationSec}s`);
+            elements.guideEmoji.style.setProperty('--jump-scale', scaleAmount);
         }
 
         function doJump() {
             if (!state.isActive) return;
             state.count++;
             elements.jumpCountDisplay.textContent = state.count;
+            
+            elements.charImg.classList.remove('jumping');
+            elements.guideEmoji.classList.remove('jumping');
+            
+            void elements.charImg.offsetWidth; 
+            void elements.guideEmoji.offsetWidth;
+            
             elements.charImg.classList.add('jumping');
             elements.guideEmoji.classList.add('jumping');
+            
+            const bpm = state.bpm;
+            const t = (bpm - 40) / (240 - 40);
+            const durationMs = (0.45 * (1 - t) + 0.08 * t) * 1000;
+            
             setTimeout(() => {
                 elements.charImg.classList.remove('jumping');
                 elements.guideEmoji.classList.remove('jumping');
-            }, 150);
+            }, durationMs - 5);
         }
 
         // --- Gemini AI ---
@@ -324,6 +565,12 @@
         }
 
         async function fetchAdvice() {
+            if (!apiKey) {
+                elements.aiAdviceText.textContent = "素晴らしいジャンプでした！(APIキーが設定されていないため、AIメッセージはご利用いただけません。)";
+                elements.aiAdviceText.classList.remove('hidden');
+                elements.btnGetAdvice.classList.add('hidden');
+                return;
+            }
             elements.btnGetAdvice.classList.add('hidden');
             elements.aiLoading.classList.remove('hidden');
             const prompt = `ジャンプトレーニング結果: ${state.count}回、テンポ${state.bpm}BPM。元気づける日本語メッセージを120文字以内で作成してください。`;
@@ -359,53 +606,241 @@
             }, 3000);
         }
 
+        // --- 画像ライブラリ（ギャラリー）描画処理 ---
+        function openLibraryModal(type) {
+            state.currentLibraryType = type;
+            elements.libraryTitle.textContent = type === 'char' ? 'キャラクターを選択' : '背景を選択';
+            renderLibraryGrid();
+            elements.libraryModal.classList.remove('hidden');
+        }
+
+        function renderLibraryGrid() {
+            elements.libraryGrid.innerHTML = '';
+            const items = state.currentLibraryType === 'char' ? state.library.char : state.library.bg;
+            const activeSrc = state.currentLibraryType === 'char' ? state.imgSrc : state.bgSrc;
+
+            items.forEach((base64, idx) => {
+                const wrapper = document.createElement('div');
+                wrapper.className = `relative aspect-square rounded-2xl overflow-hidden border-4 cursor-pointer transition-all active:scale-95 shadow-md ${activeSrc === base64 ? 'border-emerald-500 scale-95 ring-4 ring-emerald-500/20' : 'border-slate-800 hover:border-blue-400'}`;
+                
+                // サムネイルイメージ
+                const img = document.createElement('img');
+                img.src = base64;
+                img.className = "w-full h-full object-cover bg-slate-800";
+                
+                // クリック時選択イベント
+                wrapper.onclick = () => {
+                    selectLibraryItem(state.currentLibraryType, idx, true);
+                };
+
+                // デフォルト（インデックス0）以外のアイテムには、ホバーで削除できるようにゴミ箱マークを設置
+                if (idx > 0) {
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.innerHTML = "❌";
+                    deleteBtn.className = "absolute top-1 right-1 bg-black/75 hover:bg-red-600 rounded-full w-6 h-6 flex items-center justify-center text-xs text-white shadow-md transition-colors";
+                    deleteBtn.onclick = (e) => {
+                        e.stopPropagation(); // 選択イベントの発火を防ぐ
+                        deleteLibraryItem(state.currentLibraryType, idx);
+                    };
+                    wrapper.appendChild(deleteBtn);
+                }
+
+                wrapper.appendChild(img);
+                elements.libraryGrid.appendChild(wrapper);
+            });
+        }
+
+        async function selectLibraryItem(type, index, shouldClose = true) {
+            const items = type === 'char' ? state.library.char : state.library.bg;
+            const base64 = items[index];
+            if (!base64) return;
+
+            if (type === 'char') {
+                state.imgSrc = base64;
+                elements.charImg.src = base64;
+                elements.charImg.classList.remove('hidden');
+                elements.charPlaceholder.classList.add('hidden');
+            } else {
+                state.bgSrc = base64;
+                elements.bgImg.src = base64;
+            }
+
+            // クラウド上のアクティブ選択値を更新
+            if (state.user && state.saveCode) {
+                try {
+                    const docRef = db.collection('artifacts').doc(appId).collection('users').doc(state.saveCode).collection('settings').doc('character');
+                    const updateData = type === 'char' ? { imageBase64: base64 } : { bgBase64: base64 };
+                    await docRef.set({ ...updateData, updatedAt: Date.now() }, { merge: true });
+                } catch (err) {
+                    console.error("Cloud selection update error:", err);
+                }
+            }
+
+            if (shouldClose) {
+                elements.libraryModal.classList.add('hidden');
+                showToast(type === 'char' ? "キャラクターを変更しました！" : "背景を変更しました！");
+            }
+        }
+
+        async function deleteLibraryItem(type, index) {
+            const items = type === 'char' ? [...state.library.char] : [...state.library.bg];
+            const targetBase64 = items[index];
+            
+            // アイテム削除
+            items.splice(index, 1);
+            
+            if (type === 'char') {
+                state.library.char = items;
+                // もし今使っている画像を削除した場合は、デフォルト（0番目）をセット
+                if (state.imgSrc === targetBase64) {
+                    await selectLibraryItem('char', 0, false);
+                }
+            } else {
+                state.library.bg = items;
+                if (state.bgSrc === targetBase64) {
+                    await selectLibraryItem('bg', 0, false);
+                }
+            }
+
+            // クラウド更新
+            if (state.user && state.saveCode) {
+                try {
+                    const docRef = db.collection('artifacts').doc(appId).collection('users').doc(state.saveCode).collection('settings').doc('character');
+                    const updateData = type === 'char' ? { charLibrary: items } : { bgLibrary: items };
+                    await docRef.set({ ...updateData, updatedAt: Date.now() }, { merge: true });
+                    showToast("ライブラリから削除しました");
+                    renderLibraryGrid();
+                } catch (err) {
+                    console.error("Library delete error:", err);
+                }
+            }
+        }
+
         async function processAndSaveImage(file, type) {
-            if (!state.user) return;
+            if (!state.user || !state.saveCode) return;
             state.isSaving = true;
+            showToast("画像を最適化中...");
+
             const reader = new FileReader();
             reader.onload = (e) => {
                 const img = new Image();
                 img.onload = async () => {
                     const canvas = document.createElement('canvas');
-                    const maxDim = 512;
+                    
+                    // ライブラリ容量セーブのため、さらに最適化したリサイズ設計（クラウド1MB限界保護）
+                    const maxDim = type === 'char' ? 320 : 400; 
                     let width = img.width, height = img.height;
                     if (width > height) { if (width > maxDim) { height *= maxDim / width; width = maxDim; } }
                     else { if (height > maxDim) { width *= maxDim / height; height = maxDim; } }
                     canvas.width = width; canvas.height = height;
                     const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
-                    const base64Data = canvas.toDataURL('image/png', 0.7);
                     
-                    if (base64Data.length > 1048576) {
-                        showToast("画像が大きすぎます");
+                    // 透過PNGの場合、透明度（透過チャンネル）を維持するため、塗りつぶしは背景画像（JPEG化する際）のみ行う
+                    if (type === 'bg') {
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, width, height);
+                    }
+                    
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // 書き出し形式の選定
+                    let base64Data;
+                    if (type === 'char') {
+                        // キャラクターは透過情報を守るため必ずPNG形式で保存（黒塗りを防止！）
+                        base64Data = canvas.toDataURL('image/png');
+                    } else {
+                        // 背景は透明である必要がないため、大幅軽量化が可能なJPEGで保存
+                        base64Data = canvas.toDataURL('image/jpeg', 0.6);
+                    }
+                    
+                    if (base64Data.length > 350000) {
+                        showToast("画像サイズが大きすぎます。別の画像をお試しください。");
                         state.isSaving = false; return;
                     }
+
+                    // 現在のライブラリにストック（最大6枚まで）
+                    const currentList = type === 'char' ? [...state.library.char] : [...state.library.bg];
+                    if (currentList.length >= 6) {
+                        showToast("ライブラリが一杯です。不要な画像を削除してください。");
+                        state.isSaving = false; return;
+                    }
+                    currentList.push(base64Data);
+
                     try {
-                        const docRef = db.collection('artifacts').doc(appId).collection('users').doc(state.user.uid).collection('settings').doc('character');
-                        const updateData = type === 'char' ? { imageBase64: base64Data } : { bgBase64: base64Data };
+                        const docRef = db.collection('artifacts').doc(appId).collection('users').doc(state.saveCode).collection('settings').doc('character');
+                        
+                        let updateData = {};
+                        if (type === 'char') {
+                            state.library.char = currentList;
+                            state.imgSrc = base64Data;
+                            elements.charImg.src = base64Data;
+                            elements.charImg.classList.remove('hidden');
+                            elements.charPlaceholder.classList.add('hidden');
+                            updateData = { charLibrary: currentList, imageBase64: base64Data };
+                        } else {
+                            state.library.bg = currentList;
+                            state.bgSrc = base64Data;
+                            elements.bgImg.src = base64Data;
+                            updateData = { bgLibrary: currentList, bgBase64: base64Data };
+                        }
+
                         await docRef.set({ ...updateData, updatedAt: Date.now() }, { merge: true });
-                    } catch (err) { console.error("Save error:", err); }
-                    finally { state.isSaving = false; }
+                        showToast("新しくライブラリに追加しました！");
+                        renderLibraryGrid();
+                    } catch (err) { 
+                        console.error("Save error:", err); 
+                        showToast("アップロードに失敗しました");
+                    } finally { 
+                        state.isSaving = false; 
+                    }
                 };
                 img.src = e.target.result;
             };
             reader.readAsDataURL(file);
         }
 
+        // セーブコードをクリップボードにコピーする汎用関数
+        function copySaveCodeToClipboard() {
+            if (!state.saveCode || state.saveCode === "読み込み中...") return false;
+            
+            const dummy = document.createElement("textarea");
+            document.body.appendChild(dummy);
+            dummy.value = state.saveCode;
+            dummy.select();
+            document.execCommand("copy");
+            document.body.removeChild(dummy);
+            return true;
+        }
+
+        // セーブコード確認モーダルを表示する関数
+        function showSaveCodeConfirmDialog() {
+            elements.confirmSaveCodeText.textContent = state.saveCode;
+            elements.saveCodeConfirmModal.classList.remove('hidden');
+        }
+
         // --- ブートストラップ ---
         async function startApp() {
             await startCamera();
-            await initAuth();
             
-            auth.onAuthStateChanged(user => {
+            auth.onAuthStateChanged(async (user) => {
                 state.user = user;
-                if (user) syncFirestore();
+                if (user) {
+                    if (!state.saveCode) {
+                        state.saveCode = user.uid;
+                    }
+                    await syncFirestore();
+                } else {
+                    state.isSynced = false;
+                }
             });
+
+            await initAuth();
+            updateJumpStyles(); 
         }
 
         // --- イベントリスナー ---
         elements.btnStart.onclick = () => {
-            if (!state.imgSrc) { showToast("先にキャラを選んでね！"); return; }
+            if (!state.imgSrc) { showToast("先にキャラを登録してね！"); return; }
             state.isActive = true;
             state.count = 0;
             elements.jumpCountDisplay.textContent = "0";
@@ -418,9 +853,9 @@
             
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             if (audioCtx.state === 'suspended') audioCtx.resume();
+            
             nextNoteTime = audioCtx.currentTime;
             scheduler();
-            speak("トレーニング開始！リズムに合わせてジャンプ！");
         };
 
         elements.btnStop.onclick = () => {
@@ -433,31 +868,120 @@
             elements.guideArea.style.opacity = "1";
             
             elements.finalCount.textContent = state.count;
+            state.count = 0;
+            elements.jumpCountDisplay.textContent = "0";
+
             elements.aiAdviceText.classList.add('hidden');
             elements.btnGetAdvice.classList.remove('hidden');
             elements.resultModal.classList.remove('hidden');
-            speak("お疲れ様でした！");
         };
 
         elements.btnFaster.onclick = () => {
             state.bpm = Math.min(240, state.bpm + 10);
             elements.bpmDisplay.textContent = state.bpm;
+            updateJumpStyles(); 
         };
         elements.btnSlower.onclick = () => {
             state.bpm = Math.max(40, state.bpm - 10);
             elements.bpmDisplay.textContent = state.bpm;
+            updateJumpStyles(); 
         };
 
-        elements.btnTriggerChar.onclick = () => elements.charInput.click();
-        elements.charPlaceholder.onclick = () => elements.charInput.click();
-        elements.charImg.onclick = () => elements.charInput.click();
-        elements.btnTriggerBg.onclick = () => elements.bgInput.click();
+        // アクションボタンをライブラリへの導線に変更
+        elements.btnTriggerChar.onclick = () => openLibraryModal('char');
+        elements.charPlaceholder.onclick = () => openLibraryModal('char');
+        elements.charImg.onclick = () => openLibraryModal('char');
+        elements.btnTriggerBg.onclick = () => openLibraryModal('bg');
 
-        elements.charInput.onchange = (e) => processAndSaveImage(e.target.files[0], 'char');
-        elements.bgInput.onchange = (e) => processAndSaveImage(e.target.files[0], 'bg');
+        // ライブラリモーダル内のアップロード指示
+        elements.btnLibraryUpload.onclick = () => {
+            if (state.currentLibraryType === 'char') {
+                elements.charInput.click();
+            } else {
+                elements.bgInput.click();
+            }
+        };
+
+        elements.btnCloseLibrary.onclick = () => {
+            elements.libraryModal.classList.add('hidden');
+        };
+
+        // ファイル入力のハンドラ
+        elements.charInput.onchange = (e) => {
+            if (e.target.files[0]) {
+                processAndSaveImage(e.target.files[0], 'char');
+            }
+        };
+        elements.bgInput.onchange = (e) => {
+            if (e.target.files[0]) {
+                processAndSaveImage(e.target.files[0], 'bg');
+            }
+        };
 
         elements.btnGetAdvice.onclick = fetchAdvice;
         elements.btnCloseResult.onclick = () => elements.resultModal.classList.add('hidden');
+
+        // 🔑 コード確認（再表示）ボタン
+        elements.btnShowCode.onclick = () => {
+            showSaveCodeConfirmDialog();
+        };
+
+        // 1. APIキー保存イベント
+        elements.btnSaveApiKey.onclick = () => {
+            const enteredKey = elements.apiKeyInput.value.trim();
+            if (enteredKey) {
+                apiKey = enteredKey;
+                showToast("APIキーを適用しました");
+            } else {
+                showToast("APIキー未入力のため、AIアドバイスはオフになります。");
+            }
+            elements.apiKeyModal.classList.add('hidden');
+            elements.saveCodeModal.classList.remove('hidden'); 
+        };
+
+        elements.btnSkipApiKey.onclick = () => {
+            apiKey = "";
+            showToast("AIアドバイスはオフになります");
+            elements.apiKeyModal.classList.add('hidden');
+            elements.saveCodeModal.classList.remove('hidden'); 
+        };
+
+        // 2. セーブコード（引き継ぎ）適用イベント
+        elements.btnApplySaveCode.onclick = async () => {
+            const enteredCode = elements.saveCodeInput.value.trim();
+            if (enteredCode) {
+                state.saveCode = enteredCode;
+                state.isSynced = false; 
+                await syncFirestore();
+                showToast("セーブデータを読み込みました！");
+                
+                elements.saveCodeModal.classList.add('hidden');
+                showSaveCodeConfirmDialog();
+            } else {
+                showToast("新規でトレーニングを準備します。");
+                elements.saveCodeModal.classList.add('hidden');
+            }
+        };
+
+        elements.btnNewSaveCode.onclick = () => {
+            showToast("新規データで開始します");
+            elements.saveCodeModal.classList.add('hidden');
+            showSaveCodeConfirmDialog();
+        };
+
+        // 3. セーブコード確認モーダルの各アクション
+        elements.btnConfirmCopy.onclick = () => {
+            if (copySaveCodeToClipboard()) {
+                showToast("コピーしました！付箋やメモ帳に保存してください。");
+            }
+        };
+
+        // コピー完了（進む）ボタンを押したときに完全に画面上の表示を隠す
+        elements.btnConfirmOk.onclick = () => {
+            state.hasConfirmedCode = true; 
+            elements.saveCodeConfirmModal.classList.add('hidden');
+            showToast("セットアップ完了！お好みのキャラクターと背景を登録してください。");
+        };
 
         // 実行開始
         startApp();
